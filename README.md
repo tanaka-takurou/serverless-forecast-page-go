@@ -14,13 +14,13 @@ Simple kit for serverless forecast using AWS Lambda.
 
 ## Settings
  - S3
-  - Create Bucket
-  - Edit api/main.go
-   - bucketName
+   - Create Bucket
+   - Edit api/main.go
+     - bucketName
  - IAM
-  - Create IAM Role for Forecast
-  - Edit api/main.go
-   - forecastRoleArn
+   - Create IAM Role for Forecast
+   - Edit api/main.go
+     - forecastRoleArn
 
 ## Usage
 
