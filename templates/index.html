@@ -1,0 +1,56 @@
+{{define "base"}}
+<!doctype html>
+<html>
+  <head>
+{{template "headtag" .}}
+  </head>
+  <body>
+    <h1 class="ui center aligned header">Forecast</h1>
+    <div class="main ui container">
+      <div class="ui segment">
+        <canvas id="lineChart"></canvas>
+      </div>
+    </div>
+    <div id="warning" class="ui container hidden warning message"></div>
+    <div id="info" class="ui container hidden info message">
+      <p id="result"></p>
+    </div>
+    <div class="main ui container">
+      <form class="ui segment" method="POST">
+        <div id="loader" class="ui inverted dimmer">
+          <div class="ui large text loader">Loading</div>
+        </div>
+        <div class="content">
+          <div class="ui form">
+            <div class="field">
+              <label>Data File</label>
+              <div class="ui input">
+                <input id="filedata" name="filedata" type="file" accept="text/*" onchange="ChangeFile();">
+              </div>
+            </div>
+            <div class="field">
+              <label>Data Text</label>
+              <div class="ui input">
+                <input id="textdata" name="textdata" type="text" onchange="ChangeText();">
+              </div>
+            </div>
+            <div class="field">
+              <label>Sample Data</label>
+              <select id="sampledata" class="ui dropdown" name="sampledata" onchange="ChangeData();">
+                <option value="0">Select Data</option>
+                <option value="1">Sine Data</option>
+                <option value="2">Cosine Data</option>
+                <option value="3">Linear Data</option>
+              </select>
+            </div>
+            <div class="field">
+              <div id="submit" class="ui green button submitbutton" onclick="SubmitForm('senddata');">Send</div>
+            </div>
+          </div>
+        </div>
+        <input id="action" type="hidden" name="action" value="sendmessage">
+      </form>
+    </div>
+  </body>
+</html>
+{{end}}
