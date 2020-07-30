@@ -574,7 +574,7 @@ func getResult(id string)(string, error) {
 		return "", err
 	} else {
 		for _, v := range values {
-			resultData += strconv.FormatFloat(v.P10, 'f', -1, 64) + ","
+			resultData += strconv.FormatFloat(v.P50, 'f', -1, 64) + ","
 		}
 	}
 	return "[" + resultData[:len(resultData)-1] + "]", nil
