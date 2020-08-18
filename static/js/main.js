@@ -146,7 +146,7 @@ var request = function(data, callback, onerror) {
     contentType:   'application/json',
     scriptCharset: 'utf-8',
     data:          JSON.stringify(data),
-    url:           {{ .Api }}
+    url:           App.url
   })
   .done(function(res) {
     callback(res);
@@ -245,4 +245,5 @@ var App = {
   resultRange: 0,
   pid: "",
   progress: "",
+  url: location.origin + {{ .ApiPath }},
 };
