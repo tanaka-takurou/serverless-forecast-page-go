@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"fmt"
 	"log"
 	"time"
@@ -32,19 +33,14 @@ type ResultData struct {
 	P90  float64 `csv:"p90"`
 }
 
-
 type Response events.APIGatewayProxyResponse
 
 const layout              string = "2006-01-02 15:04"
 const layout2             string = "20060102150405.000"
 const layout3             string = "2006-01-02 00:00:00"
 const idPrefix            string = "id"
-const bucketName          string = "your-bucket"
-const bucketRegion        string = "ap-northeast-1"
 const bucketPath          string = "csv"
 const bucketResultPath    string = "result"
-const forecastRegion      string = "ap-northeast-1"
-const forecastRoleArn     string = "arn:aws:iam::0:role/your-role"
 
 func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (Response, error) {
 	var jsonBytes []byte
@@ -126,19 +122,19 @@ func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (
 
 func getForecastservice() *forecastservice.ForecastService {
 	return forecastservice.New(session.New(), &aws.Config{
-		Region: aws.String(forecastRegion),
+		Region: aws.String(os.Getenv("REGION")),
 	})
 }
 
 func getS3() *s3.S3 {
 	return s3.New(session.New(), &aws.Config{
-		Region: aws.String(bucketRegion),
+		Region: aws.String(os.Getenv("REGION")),
 	})
 }
 
 func getSession()(*session.Session, error) {
 	return session.NewSession(&aws.Config{
-		Region: aws.String(bucketRegion)},
+		Region: aws.String(os.Getenv("REGION"))},
 	)
 }
 
@@ -381,7 +377,7 @@ func getObjectKey(id string) string {
 	svc := getS3()
 
 	input := &s3.ListObjectsInput{
-		Bucket: aws.String(bucketName),
+		Bucket: aws.String(os.Getenv("BUCKET_NAME")),
 	}
 	res, err := svc.ListObjects(input)
 	if err != nil {
@@ -412,7 +408,7 @@ func uploadData(id string, values []float64) error {
 	uploader := s3manager.NewUploader(sess)
 	_, err = uploader.Upload(&s3manager.UploadInput{
 		ACL: aws.String("private"),
-		Bucket: aws.String(bucketName),
+		Bucket: aws.String(os.Getenv("BUCKET_NAME")),
 		Key: aws.String(bucketPath + "/" + filename),
 		Body: bytes.NewReader([]byte(stringData)),
 		ContentType: aws.String(contentType),
@@ -477,8 +473,8 @@ func checkImport(id string)(string, error) {
 		if ds == nil {
 			return "", fmt.Errorf("Error: %s", "No Dataset.")
 		}
-		path := "s3://" + bucketName + "/" + bucketPath + "/" + getForecastId(id) + ".csv"
-		_, err := createDatasetImportJob(id, aws.StringValue(ds.DatasetArn), path, forecastRoleArn)
+		path := "s3://" + os.Getenv("BUCKET_NAME") + "/" + bucketPath + "/" + getForecastId(id) + ".csv"
+		_, err := createDatasetImportJob(id, aws.StringValue(ds.DatasetArn), path, os.Getenv("FORECAST_ROLE_ARN"))
 		if err != nil {
 			log.Print(err)
 			return "", err
@@ -535,8 +531,8 @@ func checkExport(id string)(string, error) {
 		if fct == nil {
 			return "", fmt.Errorf("Error: %s", "No Forecast.")
 		}
-		path := "s3://" + bucketName + "/" + bucketResultPath + "/" + getForecastId(id)
-		_, err := createForecastExportJob(id, aws.StringValue(fct.ForecastArn), path, forecastRoleArn)
+		path := "s3://" + os.Getenv("BUCKET_NAME") + "/" + bucketResultPath + "/" + getForecastId(id)
+		_, err := createForecastExportJob(id, aws.StringValue(fct.ForecastArn), path, os.Getenv("FORECAST_ROLE_ARN"))
 		if err != nil {
 			log.Print(err)
 			return "", err
@@ -554,7 +550,7 @@ func getResult(id string)(string, error) {
 	}
 	svc := getS3()
 	obj, err := svc.GetObject(&s3.GetObjectInput{
-		Bucket: aws.String(bucketName),
+		Bucket: aws.String(os.Getenv("BUCKET_NAME")),
 		Key:    aws.String(objectKey),
 	})
 	if err != nil {
