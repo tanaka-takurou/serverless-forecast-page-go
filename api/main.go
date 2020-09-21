@@ -12,13 +12,14 @@ import (
 	"io/ioutil"
 	"encoding/json"
 	"github.com/jszwec/csvutil"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/forecastservice"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/external"
+	"github.com/aws/aws-sdk-go-v2/service/forecast"
+	"github.com/aws/aws-sdk-go-v2/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 type APIResponse struct {
@@ -34,6 +35,10 @@ type ResultData struct {
 }
 
 type Response events.APIGatewayProxyResponse
+
+var cfg aws.Config
+var s3Client *s3.Client
+var forecastClient *forecast.Client
 
 const layout              string = "2006-01-02 15:04"
 const layout2             string = "20060102150405.000"
@@ -51,7 +56,7 @@ func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (
 		switch v {
 		case "senddata" :
 			if data, ok := d["data"]; ok {
-				res, e := sendData(data)
+				res, e := sendData(ctx, data)
 				if e != nil {
 					err = e
 				} else {
@@ -60,7 +65,7 @@ func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (
 			}
 		case "checkimport" :
 			if id, ok := d["id"]; ok {
-				res, e := checkImport(id)
+				res, e := checkImport(ctx, id)
 				if e != nil {
 					err = e
 				} else {
@@ -69,7 +74,7 @@ func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (
 			}
 		case "checkpredictor" :
 			if id, ok := d["id"]; ok {
-				res, e := checkPredictor(id)
+				res, e := checkPredictor(ctx, id)
 				if e != nil {
 					err = e
 				} else {
@@ -78,7 +83,7 @@ func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (
 			}
 		case "checkforecast" :
 			if id, ok := d["id"]; ok {
-				res, e := checkForecast(id)
+				res, e := checkForecast(ctx, id)
 				if e != nil {
 					err = e
 				} else {
@@ -87,7 +92,7 @@ func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (
 			}
 		case "checkexport" :
 			if id, ok := d["id"]; ok {
-				res, e := checkExport(id)
+				res, e := checkExport(ctx, id)
 				if e != nil {
 					err = e
 				} else {
@@ -96,7 +101,7 @@ func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (
 			}
 		case "getresult" :
 			if id, ok := d["id"]; ok {
-				res, e := getResult(id)
+				res, e := getResult(ctx, id)
 				if e != nil {
 					err = e
 				} else {
@@ -120,270 +125,294 @@ func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (
 	}, nil
 }
 
-func getForecastservice() *forecastservice.ForecastService {
-	return forecastservice.New(session.New(), &aws.Config{
-		Region: aws.String(os.Getenv("REGION")),
-	})
-}
-
-func getS3() *s3.S3 {
-	return s3.New(session.New(), &aws.Config{
-		Region: aws.String(os.Getenv("REGION")),
-	})
-}
-
-func getSession()(*session.Session, error) {
-	return session.NewSession(&aws.Config{
-		Region: aws.String(os.Getenv("REGION"))},
-	)
-}
-
 func getForecastId(id string) string {
 	return idPrefix + id
 }
 
-func createDatasetGroup(id string)(string, error) {
-	svc := getForecastservice()
-
-	input := &forecastservice.CreateDatasetGroupInput{
-		DatasetGroupName: aws.String(getForecastId(id)),
-		Domain: aws.String("CUSTOM"),
+func createDatasetGroup(ctx context.Context, id string)(string, error) {
+	if forecastClient == nil {
+		forecastClient = forecast.New(cfg)
 	}
-	res, err := svc.CreateDatasetGroup(input)
+
+	input := &forecast.CreateDatasetGroupInput{
+		DatasetGroupName: aws.String(getForecastId(id)),
+		Domain: forecast.DomainCustom,
+	}
+	req := forecastClient.CreateDatasetGroupRequest(input)
+	res, err := req.Send(ctx)
 	if err != nil {
 		return "", err
 	}
-	return aws.StringValue(res.DatasetGroupArn), nil
+	return aws.StringValue(res.CreateDatasetGroupOutput.DatasetGroupArn), nil
 }
 
-func createDataset(id string)(string, error) {
-	svc := getForecastservice()
+func createDataset(ctx context.Context, id string)(string, error) {
+	if forecastClient == nil {
+		forecastClient = forecast.New(cfg)
+	}
 
-	input := &forecastservice.CreateDatasetInput{
+	input := &forecast.CreateDatasetInput{
 		DatasetName: aws.String(getForecastId(id)),
 		DataFrequency: aws.String("D"),
-		DatasetType: aws.String("TARGET_TIME_SERIES"),
-		Domain: aws.String("CUSTOM"),
-		Schema: &forecastservice.Schema{
-			Attributes: []*forecastservice.SchemaAttribute{
+		DatasetType: forecast.DatasetTypeTargetTimeSeries,
+		Domain: forecast.DomainCustom,
+		Schema: &forecast.Schema{
+			Attributes: []forecast.SchemaAttribute{
 				{
 					AttributeName: aws.String("item_id"),
-					AttributeType: aws.String("string"),
+					AttributeType: forecast.AttributeTypeString,
 				},
 				{
 					AttributeName: aws.String("timestamp"),
-					AttributeType: aws.String("timestamp"),
+					AttributeType: forecast.AttributeTypeTimestamp,
 				},
 				{
 					AttributeName: aws.String("target_value"),
-					AttributeType: aws.String("float"),
+					AttributeType: forecast.AttributeTypeFloat,
 				},
 			},
 		},
 	}
-	res, err := svc.CreateDataset(input)
+	req := forecastClient.CreateDatasetRequest(input)
+	res, err := req.Send(ctx)
 	if err != nil {
 		return "", err
 	}
-	return aws.StringValue(res.DatasetArn), nil
+	return aws.StringValue(res.CreateDatasetOutput.DatasetArn), nil
 }
 
-func createDatasetImportJob(id string, datasetArn string, path string, roleArn string)(string, error) {
-	svc := getForecastservice()
+func createDatasetImportJob(ctx context.Context, id string, datasetArn string, path string, roleArn string)(string, error) {
+	if forecastClient == nil {
+		forecastClient = forecast.New(cfg)
+	}
 
-	input := &forecastservice.CreateDatasetImportJobInput{
+	input := &forecast.CreateDatasetImportJobInput{
 		DatasetImportJobName: aws.String(getForecastId(id)),
 		DatasetArn: aws.String(datasetArn),
-		DataSource: &forecastservice.DataSource{
-			S3Config: &forecastservice.S3Config{
+		DataSource: &forecast.DataSource{
+			S3Config: &forecast.S3Config{
 				Path: aws.String(path),
 				RoleArn: aws.String(roleArn),
 			},
 		},
 	}
-	res, err := svc.CreateDatasetImportJob(input)
+	req := forecastClient.CreateDatasetImportJobRequest(input)
+	res, err := req.Send(ctx)
 	if err != nil {
 		return "", err
 	}
-	return aws.StringValue(res.DatasetImportJobArn), nil
+	return aws.StringValue(res.CreateDatasetImportJobOutput.DatasetImportJobArn), nil
 }
 
-func createForecast(id string, predictorArn string)(string, error) {
-	svc := getForecastservice()
+func createForecast(ctx context.Context, id string, predictorArn string)(string, error) {
+	if forecastClient == nil {
+		forecastClient = forecast.New(cfg)
+	}
 
-	input := &forecastservice.CreateForecastInput{
+	input := &forecast.CreateForecastInput{
 		ForecastName: aws.String(getForecastId(id)),
 		PredictorArn: aws.String(predictorArn),
 	}
-	res, err := svc.CreateForecast(input)
+	req := forecastClient.CreateForecastRequest(input)
+	res, err := req.Send(ctx)
 	if err != nil {
 		return "", err
 	}
-	return aws.StringValue(res.ForecastArn), nil
+	return aws.StringValue(res.CreateForecastOutput.ForecastArn), nil
 }
 
-func createForecastExportJob(id string, forecastArn string, path string, roleArn string)(string, error) {
-	svc := getForecastservice()
+func createForecastExportJob(ctx context.Context, id string, forecastArn string, path string, roleArn string)(string, error) {
+	if forecastClient == nil {
+		forecastClient = forecast.New(cfg)
+	}
 
-	input := &forecastservice.CreateForecastExportJobInput{
+	input := &forecast.CreateForecastExportJobInput{
 		ForecastExportJobName: aws.String(getForecastId(id)),
 		ForecastArn: aws.String(forecastArn),
-		Destination: &forecastservice.DataDestination{
-			S3Config: &forecastservice.S3Config{
+		Destination: &forecast.DataDestination{
+			S3Config: &forecast.S3Config{
 				Path: aws.String(path),
 				RoleArn: aws.String(roleArn),
 			},
 		},
 	}
-	res, err := svc.CreateForecastExportJob(input)
+	req := forecastClient.CreateForecastExportJobRequest(input)
+	res, err := req.Send(ctx)
 	if err != nil {
 		return "", err
 	}
-	return aws.StringValue(res.ForecastExportJobArn), nil
+	return aws.StringValue(res.CreateForecastExportJobOutput.ForecastExportJobArn), nil
 }
 
-func createPredictor(id string, datasetGroupArn string)(string, error) {
-	svc := getForecastservice()
+func createPredictor(ctx context.Context, id string, datasetGroupArn string)(string, error) {
+	if forecastClient == nil {
+		forecastClient = forecast.New(cfg)
+	}
 
-	input := &forecastservice.CreatePredictorInput{
+	input := &forecast.CreatePredictorInput{
 		PredictorName: aws.String(getForecastId(id)),
 		PerformAutoML: aws.Bool(true),
 		ForecastHorizon: aws.Int64(10),
-		InputDataConfig: &forecastservice.InputDataConfig{
+		InputDataConfig: &forecast.InputDataConfig{
 			DatasetGroupArn: aws.String(datasetGroupArn),
 		},
-		FeaturizationConfig: &forecastservice.FeaturizationConfig{
+		FeaturizationConfig: &forecast.FeaturizationConfig{
 			ForecastFrequency: aws.String("D"),
 		},
 	}
-	res, err := svc.CreatePredictor(input)
+	req := forecastClient.CreatePredictorRequest(input)
+	res, err := req.Send(ctx)
 	if err != nil {
 		return "", err
 	}
-	return aws.StringValue(res.PredictorArn), nil
+	return aws.StringValue(res.CreatePredictorOutput.PredictorArn), nil
 }
 
-func getDatasetGroup(id string) *forecastservice.DatasetGroupSummary {
-	svc := getForecastservice()
-
-	input := &forecastservice.ListDatasetGroupsInput{}
-	res, err := svc.ListDatasetGroups(input)
-	if err != nil {
-		return nil
+func getDatasetGroup(ctx context.Context, id string) forecast.DatasetGroupSummary {
+	if forecastClient == nil {
+		forecastClient = forecast.New(cfg)
 	}
-	for _, v := range res.DatasetGroups {
+
+	input := &forecast.ListDatasetGroupsInput{}
+	req := forecastClient.ListDatasetGroupsRequest(input)
+	res, err := req.Send(ctx)
+	if err != nil {
+		return forecast.DatasetGroupSummary{}
+	}
+	for _, v := range res.ListDatasetGroupsOutput.DatasetGroups {
 		if getForecastId(id) == aws.StringValue(v.DatasetGroupName) {
 			return v
 		}
 	}
-	return nil
+	return forecast.DatasetGroupSummary{}
 }
 
-func getDataset(id string) *forecastservice.DatasetSummary {
-	svc := getForecastservice()
-
-	input := &forecastservice.ListDatasetsInput{}
-	res, err := svc.ListDatasets(input)
-	if err != nil {
-		return nil
+func getDataset(ctx context.Context, id string) forecast.DatasetSummary {
+	if forecastClient == nil {
+		forecastClient = forecast.New(cfg)
 	}
-	for _, v := range res.Datasets {
+
+	input := &forecast.ListDatasetsInput{}
+	req := forecastClient.ListDatasetsRequest(input)
+	res, err := req.Send(ctx)
+	if err != nil {
+		return forecast.DatasetSummary{}
+	}
+	for _, v := range res.ListDatasetsOutput.Datasets {
 		if getForecastId(id) == aws.StringValue(v.DatasetName) {
 			return v
 		}
 	}
-	return nil
+	return forecast.DatasetSummary{}
 }
 
-func getDatasetImportJob(id string) *forecastservice.DatasetImportJobSummary {
-	svc := getForecastservice()
-
-	input := &forecastservice.ListDatasetImportJobsInput{}
-	res, err := svc.ListDatasetImportJobs(input)
-	if err != nil {
-		return nil
+func getDatasetImportJob(ctx context.Context, id string) forecast.DatasetImportJobSummary {
+	if forecastClient == nil {
+		forecastClient = forecast.New(cfg)
 	}
-	for _, v := range res.DatasetImportJobs {
+
+	input := &forecast.ListDatasetImportJobsInput{}
+	req := forecastClient.ListDatasetImportJobsRequest(input)
+	res, err := req.Send(ctx)
+	if err != nil {
+		return forecast.DatasetImportJobSummary{}
+	}
+	for _, v := range res.ListDatasetImportJobsOutput.DatasetImportJobs {
 		if getForecastId(id) == aws.StringValue(v.DatasetImportJobName) {
 			return v
 		}
 	}
-	return nil
+	return forecast.DatasetImportJobSummary{}
 }
 
-func getForecast(id string) *forecastservice.ForecastSummary {
-	svc := getForecastservice()
-
-	input := &forecastservice.ListForecastsInput{}
-	res, err := svc.ListForecasts(input)
-	if err != nil {
-		return nil
+func getForecast(ctx context.Context, id string) forecast.ForecastSummary {
+	if forecastClient == nil {
+		forecastClient = forecast.New(cfg)
 	}
-	for _, v := range res.Forecasts {
+
+	input := &forecast.ListForecastsInput{}
+	req := forecastClient.ListForecastsRequest(input)
+	res, err := req.Send(ctx)
+	if err != nil {
+		return forecast.ForecastSummary{}
+	}
+	for _, v := range res.ListForecastsOutput.Forecasts {
 		if getForecastId(id) == aws.StringValue(v.ForecastName) {
 			return v
 		}
 	}
-	return nil
+	return forecast.ForecastSummary{}
 }
 
-func getForecastExportJob(id string) *forecastservice.ForecastExportJobSummary {
-	svc := getForecastservice()
-
-	input := &forecastservice.ListForecastExportJobsInput{}
-	res, err := svc.ListForecastExportJobs(input)
-	if err != nil {
-		return nil
+func getForecastExportJob(ctx context.Context, id string) forecast.ForecastExportJobSummary {
+	if forecastClient == nil {
+		forecastClient = forecast.New(cfg)
 	}
-	for _, v := range res.ForecastExportJobs {
+
+	input := &forecast.ListForecastExportJobsInput{}
+	req := forecastClient.ListForecastExportJobsRequest(input)
+	res, err := req.Send(ctx)
+	if err != nil {
+		return forecast.ForecastExportJobSummary{}
+	}
+	for _, v := range res.ListForecastExportJobsOutput.ForecastExportJobs {
 		if getForecastId(id) == aws.StringValue(v.ForecastExportJobName) {
 			return v
 		}
 	}
-	return nil
+	return forecast.ForecastExportJobSummary{}
 }
 
-func getPredictor(id string) *forecastservice.PredictorSummary {
-	svc := getForecastservice()
-
-	input := &forecastservice.ListPredictorsInput{}
-	res, err := svc.ListPredictors(input)
-	if err != nil {
-		return nil
+func getPredictor(ctx context.Context, id string) forecast.PredictorSummary {
+	if forecastClient == nil {
+		forecastClient = forecast.New(cfg)
 	}
-	for _, v := range res.Predictors {
+
+	input := &forecast.ListPredictorsInput{}
+	req := forecastClient.ListPredictorsRequest(input)
+	res, err := req.Send(ctx)
+	if err != nil {
+		return forecast.PredictorSummary{}
+	}
+	for _, v := range res.ListPredictorsOutput.Predictors {
 		if getForecastId(id) == aws.StringValue(v.PredictorName) {
 			return v
 		}
 	}
-	return nil
+	return forecast.PredictorSummary{}
 }
 
-func updateDatasetGroup(datasetArn string, datasetGroupArn string) error {
-	svc := getForecastservice()
+func updateDatasetGroup(ctx context.Context, datasetArn string, datasetGroupArn string) error {
+	if forecastClient == nil {
+		forecastClient = forecast.New(cfg)
+	}
 
-	input := &forecastservice.UpdateDatasetGroupInput{
-		DatasetArns: []*string{aws.String(datasetArn)},
+	input := &forecast.UpdateDatasetGroupInput{
+		DatasetArns: []string{datasetArn},
 		DatasetGroupArn: aws.String(datasetGroupArn),
 	}
-	_, err := svc.UpdateDatasetGroup(input)
+	req := forecastClient.UpdateDatasetGroupRequest(input)
+	_, err := req.Send(ctx)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func getObjectKey(id string) string {
-	svc := getS3()
+func getObjectKey(ctx context.Context, id string) string {
+	if s3Client == nil {
+		s3Client = s3.New(cfg)
+	}
 
 	input := &s3.ListObjectsInput{
 		Bucket: aws.String(os.Getenv("BUCKET_NAME")),
 	}
-	res, err := svc.ListObjects(input)
+	req := s3Client.ListObjectsRequest(input)
+	res, err := req.Send(ctx)
 	if err != nil {
 		return ""
 	}
-	for _, v := range res.Contents {
+	for _, v := range res.ListObjectsOutput.Contents {
 		if strings.HasPrefix(aws.StringValue(v.Key), bucketResultPath + "/" + getForecastId(id)) && strings.HasSuffix(aws.StringValue(v.Key), "part0.csv") {
 			return aws.StringValue(v.Key)
 		}
@@ -396,18 +425,13 @@ func uploadData(id string, values []float64) error {
 	stringData := "item_id,timestamp,target_value\n"
 	contentType := "text/csv"
 	filename := getForecastId(id) + ".csv"
-	sess, err := getSession()
-	if err != nil {
-		log.Print(err)
-		return err
-	}
 	for i, v := range values {
 		t_ := t.AddDate(0, 0, i - len(values))
 		stringData += "v," + t_.Format(layout3) + "," + strconv.FormatFloat(v, 'f', -1, 64) + "\n"
 	}
-	uploader := s3manager.NewUploader(sess)
-	_, err = uploader.Upload(&s3manager.UploadInput{
-		ACL: aws.String("private"),
+	uploader := s3manager.NewUploader(cfg)
+	_, err := uploader.Upload(&s3manager.UploadInput{
+		ACL: s3.ObjectCannedACLPrivate,
 		Bucket: aws.String(os.Getenv("BUCKET_NAME")),
 		Key: aws.String(bucketPath + "/" + filename),
 		Body: bytes.NewReader([]byte(stringData)),
@@ -420,7 +444,7 @@ func uploadData(id string, values []float64) error {
 	return nil
 }
 
-func sendData(data string)(string, error) {
+func sendData(ctx context.Context, data string)(string, error) {
 	mx := 100
 	mn := 30
 	var values []float64
@@ -442,21 +466,21 @@ func sendData(data string)(string, error) {
 	}
 
 	// CreateDatasetGroup
-	datasetGroupArn, err := createDatasetGroup(progressId)
+	datasetGroupArn, err := createDatasetGroup(ctx, progressId)
 	if err != nil {
 		log.Print(err)
 		return "", err
 	}
 
 	// CreateDataset
-	datasetArn, err := createDataset(progressId)
+	datasetArn, err := createDataset(ctx, progressId)
 	if err != nil {
 		log.Print(err)
 		return "", err
 	}
 
 	// UpdateDatasetGroup
-	err = updateDatasetGroup(datasetArn, datasetGroupArn)
+	err = updateDatasetGroup(ctx, datasetArn, datasetGroupArn)
 	if err != nil {
 		log.Print(err)
 		return "", err
@@ -464,17 +488,17 @@ func sendData(data string)(string, error) {
 	return progressId, nil
 }
 
-func checkImport(id string)(string, error) {
+func checkImport(ctx context.Context, id string)(string, error) {
 	// GetDatasetImportJob
-	res := getDatasetImportJob(id)
-	if res == nil {
+	res := getDatasetImportJob(ctx, id)
+	if len(aws.StringValue(res.Status)) < 1 {
 		// CreateDatasetImportJob
-		ds := getDataset(id)
-		if ds == nil {
+		ds := getDataset(ctx, id)
+		if len(aws.StringValue(ds.DatasetArn)) < 1 {
 			return "", fmt.Errorf("Error: %s", "No Dataset.")
 		}
 		path := "s3://" + os.Getenv("BUCKET_NAME") + "/" + bucketPath + "/" + getForecastId(id) + ".csv"
-		_, err := createDatasetImportJob(id, aws.StringValue(ds.DatasetArn), path, os.Getenv("FORECAST_ROLE_ARN"))
+		_, err := createDatasetImportJob(ctx, id, aws.StringValue(ds.DatasetArn), path, os.Getenv("FORECAST_ROLE_ARN"))
 		if err != nil {
 			log.Print(err)
 			return "", err
@@ -484,16 +508,16 @@ func checkImport(id string)(string, error) {
 	return aws.StringValue(res.Status), nil
 }
 
-func checkPredictor(id string)(string, error) {
+func checkPredictor(ctx context.Context, id string)(string, error) {
 	// GetPredictor
-	res := getPredictor(id)
-	if res == nil {
+	res := getPredictor(ctx, id)
+	if len(aws.StringValue(res.Status)) < 1 {
 		// CreatePredictor
-		dsg := getDatasetGroup(id)
-		if dsg == nil {
+		dsg := getDatasetGroup(ctx, id)
+		if len(aws.StringValue(dsg.DatasetGroupArn)) < 1 {
 			return "", fmt.Errorf("Error: %s", "No DatasetGroup.")
 		}
-		_, err := createPredictor(id, aws.StringValue(dsg.DatasetGroupArn))
+		_, err := createPredictor(ctx, id, aws.StringValue(dsg.DatasetGroupArn))
 		if err != nil {
 			log.Print(err)
 			return "", err
@@ -503,16 +527,16 @@ func checkPredictor(id string)(string, error) {
 	return aws.StringValue(res.Status), nil
 }
 
-func checkForecast(id string)(string, error) {
+func checkForecast(ctx context.Context, id string)(string, error) {
 	// GetForecast
-	res := getForecast(id)
-	if res == nil {
+	res := getForecast(ctx, id)
+	if len(aws.StringValue(res.Status)) < 1 {
 		// CreateForecast
-		pre := getPredictor(id)
-		if pre == nil {
+		pre := getPredictor(ctx, id)
+		if len(aws.StringValue(pre.PredictorArn)) < 1 {
 			return "", fmt.Errorf("Error: %s", "No Predictor.")
 		}
-		_, err := createForecast(id, aws.StringValue(pre.PredictorArn))
+		_, err := createForecast(ctx, id, aws.StringValue(pre.PredictorArn))
 		if err != nil {
 			log.Print(err)
 			return "", err
@@ -522,17 +546,17 @@ func checkForecast(id string)(string, error) {
 	return aws.StringValue(res.Status), nil
 }
 
-func checkExport(id string)(string, error) {
+func checkExport(ctx context.Context, id string)(string, error) {
 	// GetForecastExportJob
-	res := getForecastExportJob(id)
-	if res == nil {
+	res := getForecastExportJob(ctx, id)
+	if len(aws.StringValue(res.Status)) < 1 {
 		// CreateForecastExportJob
-		fct := getForecast(id)
-		if fct == nil {
+		fct := getForecast(ctx, id)
+		if len(aws.StringValue(fct.ForecastArn)) < 1 {
 			return "", fmt.Errorf("Error: %s", "No Forecast.")
 		}
 		path := "s3://" + os.Getenv("BUCKET_NAME") + "/" + bucketResultPath + "/" + getForecastId(id)
-		_, err := createForecastExportJob(id, aws.StringValue(fct.ForecastArn), path, os.Getenv("FORECAST_ROLE_ARN"))
+		_, err := createForecastExportJob(ctx, id, aws.StringValue(fct.ForecastArn), path, os.Getenv("FORECAST_ROLE_ARN"))
 		if err != nil {
 			log.Print(err)
 			return "", err
@@ -542,22 +566,25 @@ func checkExport(id string)(string, error) {
 	return aws.StringValue(res.Status), nil
 }
 
-func getResult(id string)(string, error) {
+func getResult(ctx context.Context, id string)(string, error) {
 	resultData := ""
-	objectKey := getObjectKey(id)
+	objectKey := getObjectKey(ctx, id)
 	if len(objectKey) == 0 {
 		return "", fmt.Errorf("Error: %s", "No ObjectKey.")
 	}
-	svc := getS3()
-	obj, err := svc.GetObject(&s3.GetObjectInput{
+	if s3Client == nil {
+		s3Client = s3.New(cfg)
+	}
+	req := s3Client.GetObjectRequest(&s3.GetObjectInput{
 		Bucket: aws.String(os.Getenv("BUCKET_NAME")),
 		Key:    aws.String(objectKey),
 	})
+	res, err := req.Send(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	rc := obj.Body
+	rc := res.GetObjectOutput.Body
 	defer rc.Close()
 	tmpData, err := ioutil.ReadAll(rc)
 	if err != nil {
@@ -574,6 +601,15 @@ func getResult(id string)(string, error) {
 		}
 	}
 	return "[" + resultData[:len(resultData)-1] + "]", nil
+}
+
+func init() {
+	var err error
+	cfg, err = external.LoadDefaultAWSConfig()
+	cfg.Region = os.Getenv("REGION")
+	if err != nil {
+		log.Print(err)
+	}
 }
 
 func main() {
