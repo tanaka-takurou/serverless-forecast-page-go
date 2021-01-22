@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"context"
-	"reflect"
 	"io/ioutil"
 	"encoding/json"
 	"github.com/jszwec/csvutil"
@@ -133,7 +132,7 @@ func getForecastId(id string) string {
 
 func createDatasetGroup(ctx context.Context, id string)(string, error) {
 	if forecastClient == nil {
-		forecastClient = getForecastClient()
+		forecastClient = getForecastClient(ctx)
 	}
 
 	input := &forecast.CreateDatasetGroupInput{
@@ -144,21 +143,21 @@ func createDatasetGroup(ctx context.Context, id string)(string, error) {
 	if err != nil {
 		return "", err
 	}
-	return stringValue(res.DatasetGroupArn), nil
+	return aws.ToString(res.DatasetGroupArn), nil
 }
 
 func createDataset(ctx context.Context, id string)(string, error) {
 	if forecastClient == nil {
-		forecastClient = getForecastClient()
+		forecastClient = getForecastClient(ctx)
 	}
 
 	input := &forecast.CreateDatasetInput{
 		DatasetName: aws.String(getForecastId(id)),
 		DataFrequency: aws.String("D"),
-		DatasetType: ftypes.DatasetTypeTarget_time_series,
+		DatasetType: ftypes.DatasetTypeTargetTimeSeries,
 		Domain: ftypes.DomainCustom,
 		Schema: &ftypes.Schema{
-			Attributes: []*ftypes.SchemaAttribute{
+			Attributes: []ftypes.SchemaAttribute{
 				{
 					AttributeName: aws.String("item_id"),
 					AttributeType: ftypes.AttributeTypeString,
@@ -178,12 +177,12 @@ func createDataset(ctx context.Context, id string)(string, error) {
 	if err != nil {
 		return "", err
 	}
-	return stringValue(res.DatasetArn), nil
+	return aws.ToString(res.DatasetArn), nil
 }
 
 func createDatasetImportJob(ctx context.Context, id string, datasetArn string, path string, roleArn string)(string, error) {
 	if forecastClient == nil {
-		forecastClient = getForecastClient()
+		forecastClient = getForecastClient(ctx)
 	}
 
 	input := &forecast.CreateDatasetImportJobInput{
@@ -200,12 +199,12 @@ func createDatasetImportJob(ctx context.Context, id string, datasetArn string, p
 	if err != nil {
 		return "", err
 	}
-	return stringValue(res.DatasetImportJobArn), nil
+	return aws.ToString(res.DatasetImportJobArn), nil
 }
 
 func createForecast(ctx context.Context, id string, predictorArn string)(string, error) {
 	if forecastClient == nil {
-		forecastClient = getForecastClient()
+		forecastClient = getForecastClient(ctx)
 	}
 
 	input := &forecast.CreateForecastInput{
@@ -216,12 +215,12 @@ func createForecast(ctx context.Context, id string, predictorArn string)(string,
 	if err != nil {
 		return "", err
 	}
-	return stringValue(res.ForecastArn), nil
+	return aws.ToString(res.ForecastArn), nil
 }
 
 func createForecastExportJob(ctx context.Context, id string, forecastArn string, path string, roleArn string)(string, error) {
 	if forecastClient == nil {
-		forecastClient = getForecastClient()
+		forecastClient = getForecastClient(ctx)
 	}
 
 	input := &forecast.CreateForecastExportJobInput{
@@ -238,12 +237,12 @@ func createForecastExportJob(ctx context.Context, id string, forecastArn string,
 	if err != nil {
 		return "", err
 	}
-	return stringValue(res.ForecastExportJobArn), nil
+	return aws.ToString(res.ForecastExportJobArn), nil
 }
 
 func createPredictor(ctx context.Context, id string, datasetGroupArn string)(string, error) {
 	if forecastClient == nil {
-		forecastClient = getForecastClient()
+		forecastClient = getForecastClient(ctx)
 	}
 
 	input := &forecast.CreatePredictorInput{
@@ -261,12 +260,12 @@ func createPredictor(ctx context.Context, id string, datasetGroupArn string)(str
 	if err != nil {
 		return "", err
 	}
-	return stringValue(res.PredictorArn), nil
+	return aws.ToString(res.PredictorArn), nil
 }
 
 func getDatasetGroup(ctx context.Context, id string) ftypes.DatasetGroupSummary {
 	if forecastClient == nil {
-		forecastClient = getForecastClient()
+		forecastClient = getForecastClient(ctx)
 	}
 
 	input := &forecast.ListDatasetGroupsInput{}
@@ -275,8 +274,8 @@ func getDatasetGroup(ctx context.Context, id string) ftypes.DatasetGroupSummary 
 		return ftypes.DatasetGroupSummary{}
 	}
 	for _, v := range res.DatasetGroups {
-		if getForecastId(id) == stringValue(v.DatasetGroupName) {
-			return *v
+		if getForecastId(id) == aws.ToString(v.DatasetGroupName) {
+			return v
 		}
 	}
 	return ftypes.DatasetGroupSummary{}
@@ -284,7 +283,7 @@ func getDatasetGroup(ctx context.Context, id string) ftypes.DatasetGroupSummary 
 
 func getDataset(ctx context.Context, id string) ftypes.DatasetSummary {
 	if forecastClient == nil {
-		forecastClient = getForecastClient()
+		forecastClient = getForecastClient(ctx)
 	}
 
 	input := &forecast.ListDatasetsInput{}
@@ -293,8 +292,8 @@ func getDataset(ctx context.Context, id string) ftypes.DatasetSummary {
 		return ftypes.DatasetSummary{}
 	}
 	for _, v := range res.Datasets {
-		if getForecastId(id) == stringValue(v.DatasetName) {
-			return *v
+		if getForecastId(id) == aws.ToString(v.DatasetName) {
+			return v
 		}
 	}
 	return ftypes.DatasetSummary{}
@@ -302,7 +301,7 @@ func getDataset(ctx context.Context, id string) ftypes.DatasetSummary {
 
 func getDatasetImportJob(ctx context.Context, id string) ftypes.DatasetImportJobSummary {
 	if forecastClient == nil {
-		forecastClient = getForecastClient()
+		forecastClient = getForecastClient(ctx)
 	}
 
 	input := &forecast.ListDatasetImportJobsInput{}
@@ -311,8 +310,8 @@ func getDatasetImportJob(ctx context.Context, id string) ftypes.DatasetImportJob
 		return ftypes.DatasetImportJobSummary{}
 	}
 	for _, v := range res.DatasetImportJobs {
-		if getForecastId(id) == stringValue(v.DatasetImportJobName) {
-			return *v
+		if getForecastId(id) == aws.ToString(v.DatasetImportJobName) {
+			return v
 		}
 	}
 	return ftypes.DatasetImportJobSummary{}
@@ -320,7 +319,7 @@ func getDatasetImportJob(ctx context.Context, id string) ftypes.DatasetImportJob
 
 func getForecast(ctx context.Context, id string) ftypes.ForecastSummary {
 	if forecastClient == nil {
-		forecastClient = getForecastClient()
+		forecastClient = getForecastClient(ctx)
 	}
 
 	input := &forecast.ListForecastsInput{}
@@ -329,8 +328,8 @@ func getForecast(ctx context.Context, id string) ftypes.ForecastSummary {
 		return ftypes.ForecastSummary{}
 	}
 	for _, v := range res.Forecasts {
-		if getForecastId(id) == stringValue(v.ForecastName) {
-			return *v
+		if getForecastId(id) == aws.ToString(v.ForecastName) {
+			return v
 		}
 	}
 	return ftypes.ForecastSummary{}
@@ -338,7 +337,7 @@ func getForecast(ctx context.Context, id string) ftypes.ForecastSummary {
 
 func getForecastExportJob(ctx context.Context, id string) ftypes.ForecastExportJobSummary {
 	if forecastClient == nil {
-		forecastClient = getForecastClient()
+		forecastClient = getForecastClient(ctx)
 	}
 
 	input := &forecast.ListForecastExportJobsInput{}
@@ -347,8 +346,8 @@ func getForecastExportJob(ctx context.Context, id string) ftypes.ForecastExportJ
 		return ftypes.ForecastExportJobSummary{}
 	}
 	for _, v := range res.ForecastExportJobs {
-		if getForecastId(id) == stringValue(v.ForecastExportJobName) {
-			return *v
+		if getForecastId(id) == aws.ToString(v.ForecastExportJobName) {
+			return v
 		}
 	}
 	return ftypes.ForecastExportJobSummary{}
@@ -356,7 +355,7 @@ func getForecastExportJob(ctx context.Context, id string) ftypes.ForecastExportJ
 
 func getPredictor(ctx context.Context, id string) ftypes.PredictorSummary {
 	if forecastClient == nil {
-		forecastClient = getForecastClient()
+		forecastClient = getForecastClient(ctx)
 	}
 
 	input := &forecast.ListPredictorsInput{}
@@ -365,8 +364,8 @@ func getPredictor(ctx context.Context, id string) ftypes.PredictorSummary {
 		return ftypes.PredictorSummary{}
 	}
 	for _, v := range res.Predictors {
-		if getForecastId(id) == stringValue(v.PredictorName) {
-			return *v
+		if getForecastId(id) == aws.ToString(v.PredictorName) {
+			return v
 		}
 	}
 	return ftypes.PredictorSummary{}
@@ -374,11 +373,11 @@ func getPredictor(ctx context.Context, id string) ftypes.PredictorSummary {
 
 func updateDatasetGroup(ctx context.Context, datasetArn string, datasetGroupArn string) error {
 	if forecastClient == nil {
-		forecastClient = getForecastClient()
+		forecastClient = getForecastClient(ctx)
 	}
 
 	input := &forecast.UpdateDatasetGroupInput{
-		DatasetArns: []*string{aws.String(datasetArn)},
+		DatasetArns: []string{datasetArn},
 		DatasetGroupArn: aws.String(datasetGroupArn),
 	}
 	_, err := forecastClient.UpdateDatasetGroup(ctx, input)
@@ -390,7 +389,7 @@ func updateDatasetGroup(ctx context.Context, datasetArn string, datasetGroupArn 
 
 func getObjectKey(ctx context.Context, id string) string {
 	if s3Client == nil {
-		s3Client = getS3Client()
+		s3Client = getS3Client(ctx)
 	}
 
 	input := &s3.ListObjectsInput{
@@ -401,8 +400,8 @@ func getObjectKey(ctx context.Context, id string) string {
 		return ""
 	}
 	for _, v := range res.Contents {
-		if strings.HasPrefix(stringValue(v.Key), bucketResultPath + "/" + getForecastId(id)) && strings.HasSuffix(stringValue(v.Key), "part0.csv") {
-			return stringValue(v.Key)
+		if strings.HasPrefix(aws.ToString(v.Key), bucketResultPath + "/" + getForecastId(id)) && strings.HasSuffix(aws.ToString(v.Key), "part0.csv") {
+			return aws.ToString(v.Key)
 		}
 	}
 	return ""
@@ -418,7 +417,7 @@ func uploadData(ctx context.Context, id string, values []float64) error {
 		stringData += "v," + t_.Format(layout3) + "," + strconv.FormatFloat(v, 'f', -1, 64) + "\n"
 	}
 	if s3Client == nil {
-		s3Client = getS3Client()
+		s3Client = getS3Client(ctx)
 	}
 	input := &s3.PutObjectInput{
 		ACL: stypes.ObjectCannedACLPrivate,
@@ -490,14 +489,14 @@ func checkImport(ctx context.Context, id string)(string, error) {
 			return "", fmt.Errorf("Error: %s", "No Dataset.")
 		}
 		path := "s3://" + os.Getenv("BUCKET_NAME") + "/" + bucketPath + "/" + getForecastId(id) + ".csv"
-		_, err := createDatasetImportJob(ctx, id, stringValue(ds.DatasetArn), path, os.Getenv("FORECAST_ROLE_ARN"))
+		_, err := createDatasetImportJob(ctx, id, aws.ToString(ds.DatasetArn), path, os.Getenv("FORECAST_ROLE_ARN"))
 		if err != nil {
 			log.Print(err)
 			return "", err
 		}
 		return "Start", nil
 	}
-	return stringValue(res.Status), nil
+	return aws.ToString(res.Status), nil
 }
 
 func checkPredictor(ctx context.Context, id string)(string, error) {
@@ -509,14 +508,14 @@ func checkPredictor(ctx context.Context, id string)(string, error) {
 		if dsg.DatasetGroupArn == nil {
 			return "", fmt.Errorf("Error: %s", "No DatasetGroup.")
 		}
-		_, err := createPredictor(ctx, id, stringValue(dsg.DatasetGroupArn))
+		_, err := createPredictor(ctx, id, aws.ToString(dsg.DatasetGroupArn))
 		if err != nil {
 			log.Print(err)
 			return "", err
 		}
 		return "Start", nil
 	}
-	return stringValue(res.Status), nil
+	return aws.ToString(res.Status), nil
 }
 
 func checkForecast(ctx context.Context, id string)(string, error) {
@@ -528,14 +527,14 @@ func checkForecast(ctx context.Context, id string)(string, error) {
 		if pre.PredictorArn == nil {
 			return "", fmt.Errorf("Error: %s", "No Predictor.")
 		}
-		_, err := createForecast(ctx, id, stringValue(pre.PredictorArn))
+		_, err := createForecast(ctx, id, aws.ToString(pre.PredictorArn))
 		if err != nil {
 			log.Print(err)
 			return "", err
 		}
 		return "Start", nil
 	}
-	return stringValue(res.Status), nil
+	return aws.ToString(res.Status), nil
 }
 
 func checkExport(ctx context.Context, id string)(string, error) {
@@ -548,14 +547,14 @@ func checkExport(ctx context.Context, id string)(string, error) {
 			return "", fmt.Errorf("Error: %s", "No Forecast.")
 		}
 		path := "s3://" + os.Getenv("BUCKET_NAME") + "/" + bucketResultPath + "/" + getForecastId(id)
-		_, err := createForecastExportJob(ctx, id, stringValue(fct.ForecastArn), path, os.Getenv("FORECAST_ROLE_ARN"))
+		_, err := createForecastExportJob(ctx, id, aws.ToString(fct.ForecastArn), path, os.Getenv("FORECAST_ROLE_ARN"))
 		if err != nil {
 			log.Print(err)
 			return "", err
 		}
 		return "Start", nil
 	}
-	return stringValue(res.Status), nil
+	return aws.ToString(res.Status), nil
 }
 
 func getResult(ctx context.Context, id string)(string, error) {
@@ -565,7 +564,7 @@ func getResult(ctx context.Context, id string)(string, error) {
 		return "", fmt.Errorf("Error: %s", "No ObjectKey.")
 	}
 	if s3Client == nil {
-		s3Client = getS3Client()
+		s3Client = getS3Client(ctx)
 	}
 	input := &s3.GetObjectInput{
 		Bucket: aws.String(os.Getenv("BUCKET_NAME")),
@@ -595,96 +594,21 @@ func getResult(ctx context.Context, id string)(string, error) {
 	return "[" + resultData[:len(resultData)-1] + "]", nil
 }
 
-func getS3Client() *s3.Client {
-	if cfg.Region != os.Getenv("REGION") {
-		cfg = getConfig()
-	}
-	return s3.NewFromConfig(cfg)
+func getS3Client(ctx context.Context) *s3.Client {
+	return s3.NewFromConfig(getConfig(ctx))
 }
 
-func getForecastClient() *forecast.Client {
-	if cfg.Region != os.Getenv("REGION") {
-		cfg = getConfig()
-	}
-	return forecast.NewFromConfig(cfg)
+func getForecastClient(ctx context.Context) *forecast.Client {
+	return forecast.NewFromConfig(getConfig(ctx))
 }
 
-func getConfig() aws.Config {
+func getConfig(ctx context.Context) aws.Config {
 	var err error
-	newConfig, err := config.LoadDefaultConfig()
-	newConfig.Region = os.Getenv("REGION")
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(os.Getenv("REGION")))
 	if err != nil {
 		log.Print(err)
 	}
-	return newConfig
-}
-
-func stringValue(i interface{}) string {
-	var buf bytes.Buffer
-	strVal(reflect.ValueOf(i), 0, &buf)
-	res := buf.String()
-	return res[1:len(res) - 1]
-}
-
-func strVal(v reflect.Value, indent int, buf *bytes.Buffer) {
-	for v.Kind() == reflect.Ptr {
-		v = v.Elem()
-	}
-	switch v.Kind() {
-	case reflect.Struct:
-		buf.WriteString("{\n")
-		for i := 0; i < v.Type().NumField(); i++ {
-			ft := v.Type().Field(i)
-			fv := v.Field(i)
-			if ft.Name[0:1] == strings.ToLower(ft.Name[0:1]) {
-				continue // ignore unexported fields
-			}
-			if (fv.Kind() == reflect.Ptr || fv.Kind() == reflect.Slice) && fv.IsNil() {
-				continue // ignore unset fields
-			}
-			buf.WriteString(strings.Repeat(" ", indent+2))
-			buf.WriteString(ft.Name + ": ")
-			if tag := ft.Tag.Get("sensitive"); tag == "true" {
-				buf.WriteString("<sensitive>")
-			} else {
-				strVal(fv, indent+2, buf)
-			}
-			buf.WriteString(",\n")
-		}
-		buf.WriteString("\n" + strings.Repeat(" ", indent) + "}")
-	case reflect.Slice:
-		nl, id, id2 := "", "", ""
-		if v.Len() > 3 {
-			nl, id, id2 = "\n", strings.Repeat(" ", indent), strings.Repeat(" ", indent+2)
-		}
-		buf.WriteString("[" + nl)
-		for i := 0; i < v.Len(); i++ {
-			buf.WriteString(id2)
-			strVal(v.Index(i), indent+2, buf)
-			if i < v.Len()-1 {
-				buf.WriteString("," + nl)
-			}
-		}
-		buf.WriteString(nl + id + "]")
-	case reflect.Map:
-		buf.WriteString("{\n")
-		for i, k := range v.MapKeys() {
-			buf.WriteString(strings.Repeat(" ", indent+2))
-			buf.WriteString(k.String() + ": ")
-			strVal(v.MapIndex(k), indent+2, buf)
-			if i < v.Len()-1 {
-				buf.WriteString(",\n")
-			}
-		}
-		buf.WriteString("\n" + strings.Repeat(" ", indent) + "}")
-	default:
-		format := "%v"
-		switch v.Interface().(type) {
-		case string:
-			format = "%q"
-		}
-		fmt.Fprintf(buf, format, v.Interface())
-	}
+	return cfg
 }
 
 func main() {
