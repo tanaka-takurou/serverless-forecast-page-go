@@ -13,8 +13,8 @@ echo 'Create Lambda-Function...'
 cd `dirname $0`/../
 aws lambda create-function \
 	--function-name your_function_name \
-	--runtime go1.x \
+	--runtime provided.al2 \
 	--role $ROLE_ARN \
-	--handler main \
+	--handler bootstrap \
 	--zip-file fileb://`pwd`/function.zip \
 	--region ap-northeast-1

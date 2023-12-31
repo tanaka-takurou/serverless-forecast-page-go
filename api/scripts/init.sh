@@ -8,13 +8,13 @@ aws iam attach-role-policy --role-name $ROLE_NAME --policy-arn "arn:aws:iam::aws
 echo 'Create Lambda-Function...'
 cd `dirname $0`/../
 rm function.zip
-rm main
-GOOS=linux go build main.go
-zip -g function.zip main
+rm bootstrap
+GOARCH=arm64 GOOS=linux CGO_ENABLED=0 go build -o bootstrap main.go
+zip -g function.zip bootstrap
 aws lambda create-function \
 	--function-name your_api_function_name \
-	--runtime go1.x \
+	--runtime provided.al2 \
 	--role $ROLE_ARN \
-	--handler main \
+	--handler bootstrap \
 	--zip-file fileb://`pwd`/function.zip \
 	--region ap-northeast-1
